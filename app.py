@@ -15,18 +15,23 @@ ENV_PATH = os.path.join(AUTOMV_DIR, ".env")
 
 API_KEYS = [
     ("GEMINI_API_KEY", "Gemini API Key (Google)"),
-    ("DOUBAO_API_KEY", "Doubao API Key (Volcano Engine)"),
+    ("DOUBAO_API_KEY", "Ark API Key (BytePlus or Volcengine)"),
     ("ALIYUN_OSS_ACCESS_KEY_ID", "Aliyun OSS Access Key ID"),
     ("ALIYUN_OSS_ACCESS_KEY_SECRET", "Aliyun OSS Access Key Secret"),
     ("ALIYUN_OSS_BUCKET_NAME", "Aliyun OSS Bucket Name"),
-    ("HUOSHAN_ACCESS_KEY", "Huoshan Access Key"),
-    ("HUOSHAN_SECRET_KEY", "Huoshan Secret Key"),
+    ("HUOSHAN_ACCESS_KEY", "Huoshan Access Key (China only, for lip-sync)"),
+    ("HUOSHAN_SECRET_KEY", "Huoshan Secret Key (China only, for lip-sync)"),
 ]
+
+PROVIDER_SETTING = ("ARK_PROVIDER", "API Provider", "byteplus")
 
 MODEL_SETTINGS = [
     ("GPU_ID", "GPU Device ID", "0"),
     ("WHISPER_MODEL", "Whisper Model", "openai/whisper-large-v2"),
     ("QWEN_OMNI_MODEL", "Qwen Omni Model", "Qwen/Qwen2.5-Omni-7B"),
+    ("MODEL_SEEDREAM", "Seedream Model ID", "seedream-4-0-250828"),
+    ("MODEL_SEEDANCE", "Seedance Model ID", "seedance-1-0-pro-250528"),
+    ("MODEL_SEED_LLM", "Seed LLM Model ID", "seed-1.6-250615"),
 ]
 
 
@@ -36,11 +41,15 @@ def load_env():
     return {}
 
 
-def save_env_settings(*values):
+def save_env_settings(provider, *values):
     all_keys = [k for k, _ in API_KEYS] + [k for k, _, _ in MODEL_SETTINGS]
     if not os.path.exists(ENV_PATH):
         with open(ENV_PATH, "w") as f:
             f.write("")
+
+    # Save provider
+    set_key(ENV_PATH, "ARK_PROVIDER", provider.strip() if provider else "byteplus")
+
     for key, val in zip(all_keys, values):
         if val and val.strip():
             set_key(ENV_PATH, key, val.strip())
@@ -48,17 +57,24 @@ def save_env_settings(*values):
     env = load_env()
     configured = [k for k, _ in API_KEYS if env.get(k)]
     missing = [label for k, label in API_KEYS if not env.get(k)]
-    status = f"Configured: {len(configured)}/{len(API_KEYS)} API keys"
+
+    prov = env.get("ARK_PROVIDER", "byteplus")
+    status = f"Provider: {prov}\n"
+    status += f"Configured: {len(configured)}/{len(API_KEYS)} API keys"
     if missing:
         status += f"\nMissing: {', '.join(missing)}"
     else:
         status += "\nAll API keys are set."
+
+    if prov == "byteplus":
+        status += "\n\nNote: Lip-sync (Jimeng) requires Volcengine (China). Set to 'None' if using BytePlus."
     return status
 
 
 def get_env_status():
     env = load_env()
-    lines = []
+    prov = env.get("ARK_PROVIDER", "byteplus")
+    lines = [f"  Provider: {prov}"]
     for key, label in API_KEYS:
         val = env.get(key, "")
         if val:
@@ -98,6 +114,12 @@ def generate_music_video(audio_file, music_name, lip_sync, resolution):
         yield f"Error: Required API keys not configured: {', '.join(missing)}\nPlease go to the Settings tab."
         return
 
+    # Warn if using BytePlus with lip-sync
+    provider = env.get("ARK_PROVIDER", "byteplus")
+    if provider == "byteplus" and lip_sync != "None":
+        yield "Warning: Lip-sync (Jimeng) requires Volcengine (China) credentials.\nSwitching lip-sync to 'None' for BytePlus provider.\n\n"
+        lip_sync = "None"
+
     project_dir = os.path.join(RESULT_DIR, music_name)
     os.makedirs(project_dir, exist_ok=True)
 
@@ -110,6 +132,7 @@ def generate_music_video(audio_file, music_name, lip_sync, resolution):
     shutil.copy2(audio_file, dest_audio)
 
     log = f"=== AutoMV Pipeline ===\n"
+    log += f"Provider: {provider}\n"
     log += f"Music: {music_name}\n"
     log += f"Lip-sync: {lip_sync}\n"
     log += f"Resolution: {resolution}\n"
@@ -301,10 +324,24 @@ with gr.Blocks(title="AutoMV — Music Video Generator") as app:
     with gr.Tabs():
         # ── Settings Tab ─────────────────────────────────────────────────────
         with gr.Tab("Settings"):
+            env = load_env()
+
+            gr.Markdown("### API Provider")
+            gr.Markdown(
+                "**BytePlus** (international, no Chinese phone needed) or "
+                "**Volcengine** (China, requires +86 phone).\n\n"
+                "Get your BytePlus API key at [console.byteplus.com/ark](https://console.byteplus.com/ark/region:ark+ap-southeast-1/apiKey)"
+            )
+            provider_input = gr.Radio(
+                label="Provider",
+                choices=["byteplus", "volcengine"],
+                value=env.get("ARK_PROVIDER", "byteplus"),
+                info="BytePlus = international access. Volcengine = China access.",
+            )
+
             gr.Markdown("### API Keys")
             gr.Markdown("Configure the API keys required by AutoMV. Keys are saved to `AutoMV_repo/.env`.")
 
-            env = load_env()
             api_inputs = []
             for key, label in API_KEYS:
                 inp = gr.Textbox(
@@ -326,11 +363,11 @@ with gr.Blocks(title="AutoMV — Music Video Generator") as app:
                 model_inputs.append(inp)
 
             save_btn = gr.Button("Save Settings", variant="primary")
-            settings_status = gr.Textbox(label="Status", value=get_env_status(), interactive=False, lines=8)
+            settings_status = gr.Textbox(label="Status", value=get_env_status(), interactive=False, lines=10)
 
             save_btn.click(
                 fn=save_env_settings,
-                inputs=api_inputs + model_inputs,
+                inputs=[provider_input] + api_inputs + model_inputs,
                 outputs=settings_status,
             )
 
@@ -349,6 +386,7 @@ with gr.Blocks(title="AutoMV — Music Video Generator") as app:
                         label="Lip-Sync Mode",
                         choices=["None", "Jimeng (fast)", "Wan2.2 (slow, cheap)"],
                         value="None",
+                        info="Jimeng requires Volcengine (China). Not available with BytePlus.",
                     )
                     resolution_input = gr.Dropdown(
                         label="Resolution",

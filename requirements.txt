@@ -1,2 +1,3 @@
 gradio>=4.0
 python-dotenv
+byteplus-python-sdk-v2

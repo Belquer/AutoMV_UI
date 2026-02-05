@@ -39,6 +39,11 @@ if [ ! -d "$SCRIPT_DIR/AutoMV_repo" ]; then
     echo ""
 fi
 
+# ── Apply BytePlus patches to AutoMV repo ─────────────────────────────────────
+echo "Applying BytePlus (international) patches..."
+$PYTHON "$SCRIPT_DIR/patch_byteplus.py"
+echo ""
+
 # ── Create virtual environment if missing ─────────────────────────────────────
 if [ ! -d "$SCRIPT_DIR/venv" ]; then
     echo "Creating virtual environment..."
@@ -57,6 +62,11 @@ source "$SCRIPT_DIR/venv/bin/activate"
 # ── Install / update dependencies ─────────────────────────────────────────────
 echo "Checking dependencies..."
 pip install --quiet --upgrade gradio python-dotenv
+
+# ── Apply BytePlus patches to AutoMV repo ─────────────────────────────────────
+# Install BytePlus SDK (international alternative to Volcengine)
+echo "Installing BytePlus SDK..."
+pip install --quiet --upgrade byteplus-python-sdk-v2
 echo ""
 
 # ── Launch the UI ─────────────────────────────────────────────────────────────
