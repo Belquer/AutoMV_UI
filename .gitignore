@@ -7,3 +7,4 @@ AutoMV_repo/
 *.egg-info/
 dist/
 build/
+.claude/
